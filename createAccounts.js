@@ -59,7 +59,7 @@ const createSubAccount = async (name,  masterAccount ) =>  {
             new_public_key: keyPair.publicKey.toString(),
         },
         gas: "300000000000000",
-        attachedDeposit: utils.format.parseNearAmount('11'),
+        attachedDeposit: utils.format.parseNearAmount('10'),
     });
     return subAccountId;
 };
