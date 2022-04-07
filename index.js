@@ -1,7 +1,9 @@
-
-const AMOUNT = '0';
-const {createMasterAccount, createSubAccount, createRuffleAccount} = require('./createAccounts')
-const { connect, keyStores, utils, Account} = require("near-api-js");
+const {
+    createMasterAccount,
+    createSubAccount,
+    createRuffleAccount,
+} = require("./createAccounts");
+const { connect, keyStores, Contract } = require("near-api-js");
 const path = require("path");
 const { readFile } = require("fs").promises;
 const homedir = require("os").homedir();
@@ -13,141 +15,142 @@ const config = {
     keyStore,
     networkId: "testnet",
     nodeUrl: "https://rpc.testnet.near.org",
-    helperUrl: 'https://near-contract-helper.onrender.com'
+    helperUrl: "https://near-contract-helper.onrender.com",
 };
 
-// // Generate account id
-// const generateAccountId = (name) => {
-//     const randomNumber = Math.floor(Math.random() * (99999999999999 - 10000000000000) + 10000000000000);
-//     const accountId = `${name || 'dev'}-${Date.now()}-${randomNumber}`;
-//     return accountId;
-// };
-//
-// const createMasterAccount = async (near) => {
-//   const masterAccountId = generateAccountId();
-//   const accountFilePath = `${credentialsPath}/dev-account`;
-//   const accountFilePathEnv = `${credentialsPath}/dev-account.env`;
-//   const keyPair = await KeyPair.fromRandom('ed25519');
-//
-//   await near.accountCreator.createAccount(masterAccountId, keyPair.publicKey);
-//   await keyStore.setKey(config.networkId, masterAccountId, keyPair);
-//   await writeFile(accountFilePath, masterAccountId);
-//   await writeFile(accountFilePathEnv, `CONTRACT_NAME=${masterAccountId}`);
-//   return masterAccountId;
-// };
-//
-//
-// const createSubAccount = async (masterAccount) => {
-//     const subAccountId = generateAccountId();
-//     const keyPair = KeyPair.fromRandom("ed25519");
-//     const publicKey = keyPair.publicKey.toString();
-//     await keyStore.setKey(config.networkId, subAccountId, keyPair);
-//     await masterAccount.functionCall({
-//         contractId: "testnet",
-//         methodName: "create_account",
-//         args: {
-//           new_account_id: subAccountId,
-//           new_public_key: keyPair.publicKey.toString(),
-//         },
-//         gas: "300000000000000",
-//         attachedDeposit: utils.format.parseNearAmount(AMOUNT),
-//     });
-//     return subAccountId;
-// };
-
-const playingWithRafflePrizes = async () => {
-
-    console.log('start')
+const raffleContractDemo = async () => {
     const near = await connect(config);
-    const masterAccountId = await createMasterAccount();
-    console.log('master account id')
-    console.log(masterAccountId)
-    const masterAccount = await near.account(masterAccountId);
-    await masterAccount.deployContract(await readFile('./smartContracts/prize.wasm'))
-    console.log('master deployed...')
-     const aliceId = await createSubAccount(masterAccount);
-    const alice = await near.account(aliceId);
-    await alice.deployContract(await readFile('./smartContracts/fungibleToken.wasm'));
-    console.log('alice deployed...')
-    const bobId = await createSubAccount(masterAccount);
-    const bob = await near.account(bobId);
-    await bob.deployContract(await readFile('./smartContracts/fungibleToken.wasm'));
-    console.log('bob  deployed...')
-    console.log(bobId)
-
-
-    const fungibleTokenArgsAlice = {
-        owner_id: alice.accountId,
-        total_supply: "100000000",
-        metadata: {
-          spec: "ft-1.0.0",
-          name: "Prize token",
-          symbol: "Prize",
-          decimals: 8
-        }
-    }
-
-    await alice.functionCall({
-        contractId: alice.accountId,
-        methodName: "new",
-        gas: "30000000000000",
-        args: fungibleTokenArgsAlice,
+    const prizeAccount = await deployPrizeContract(near);
+    const raffleAccount = await deployRaffleContract(near, prizeAccount);
+    const prizeContract = new Contract(prizeAccount, prizeAccount.accountId, {
+        viewMethods: ["ft_balance_of"],
     });
-    console.log('ft for alice done...')
-    const fungibleTokenArgsBob = {
-        owner_id: bob.accountId,
-        total_supply: "100000000",
-        metadata: {
-            spec: "ft-1.0.0",
-            name: "Prize token",
-            symbol: "Prize",
-            decimals: 8
-        }
-    }
 
-    await bob.functionCall({
-        contractId: bob.accountId,
-        methodName: "new",
+    const alice = await createSubAccountAndDepositPrize(
+        near,
+        "alice",
+        prizeAccount,
+        "10"
+    );
+    const bob = await createSubAccountAndDepositPrize(
+        near,
+        "bob",
+        prizeAccount,
+        "10"
+    );
+
+    await displayStatsFor(alice, prizeContract);
+    await displayStatsFor(bob, prizeContract);
+
+    //Sending 5 tokens, but as 1 ticket costs 5 prizes 1 price ft token will be refunded to alice
+    await buyTicket(prizeAccount, raffleAccount, alice, 6);
+    await buyTicket(prizeAccount, raffleAccount, bob, 5);
+
+    await displayStatsFor(alice, prizeContract);
+    await displayStatsFor(bob, prizeContract);
+};
+createSubAccountAndDepositPrize = async (near, name, prizeAccount, amount) => {
+    const subAccountId = await createSubAccount(name, prizeAccount);
+    const subAccount = await near.account(subAccountId);
+    console.log(subAccountId + " created...\n");
+
+    //Register subaccount in Prize token core
+    await prizeAccount.functionCall({
+        contractId: prizeAccount.accountId,
+        methodName: "storage_deposit",
+        args: { account_id: subAccountId },
         gas: "30000000000000",
-        args: fungibleTokenArgsBob,
+        attachedDeposit: "2350000000000000000000",
     });
-    console.log('ft for bob done...')
-    console.log('balance alice starts ...')
-    const balanc = await alice.getAccountBalance()
-    console.log(balanc)
-    console.log('balance  bob starts ...')
-    const balancBob = await bob.getAccountBalance()
-
-    console.log(balancBob)
-
-    console.log('created raffle account ...')
-    const raffleId = await createRuffleAccount(masterAccount);
-    const raffle = await near.account(raffleId);
-    await raffle.deployContract(await readFile('./smartContracts/raffle.wasm'))
-    console.log('raffle account ')
-    console.log(raffle)
-    console.log('raffle id...')
-    console.log(raffleId)
-
-    const raffBal = await raffle.getAccountBalance()
-    console.log('balance raffle account ')
-    console.log(raffBal)
-    console.log('raffle done...')
-    console.log('start call raffle .. ')
-
-  const transaction =  await masterAccount.functionCall({
-      contractId: raffle.accountId,
-      methodName:"new",
+    await prizeAccount.functionCall({
+        contractId: prizeAccount.accountId,
+        methodName: "ft_transfer",
         args: {
-            fungible_token_account_id: masterAccount.accountId,
+            receiver_id: subAccountId,
+            amount: amount,
+        },
+        gas: "30000000000000",
+        attachedDeposit: "1",
+    });
+
+    return subAccount;
+};
+
+deployPrizeContract = async (near) => {
+    const prizeAccountId = await createMasterAccount();
+    const prizeAccount = await near.account(prizeAccountId);
+
+    await prizeAccount.deployContract(
+        await readFile("./smartContracts/prize.wasm")
+    );
+
+    await prizeAccount.functionCall({
+        contractId: prizeAccountId,
+        methodName: "new",
+        gas: "30000000000000",
+        args: {
+            owner_id: prizeAccountId,
+            total_supply: "100000000",
+            metadata: {
+                spec: "ft-1.0.0",
+                name: "Prize token",
+                symbol: "Prize",
+                decimals: 8,
+            },
+        },
+    });
+    console.log("\n"+prizeAccountId + " contract deployed\n");
+    return prizeAccount;
+};
+deployRaffleContract = async (near, prizeAccount) => {
+    const raffleId = await createRuffleAccount(prizeAccount);
+    const raffle = await near.account(raffleId);
+    await raffle.deployContract(await readFile("./smartContracts/raffle.wasm"));
+
+    await prizeAccount.functionCall({
+        contractId: raffleId,
+        methodName: "new",
+        gas: "30000000000000",
+        args: {
+            fungible_token_account_id: prizeAccount.accountId,
             tokens_per_ticket: 5,
             number_of_predefined: 3,
-        }
+        },
     });
-    console.log('transaction .. ')
-    console.log(transaction)
-    console.log('end')
+    //Register raffle for FT token
+    await prizeAccount.functionCall({
+        contractId: prizeAccount.accountId,
+        methodName: "storage_deposit",
+        args: { account_id: raffleId },
+        gas: "30000000000000",
+        attachedDeposit: "2350000000000000000000",
+    });
 
-}
+    console.log(raffleId + " contract deployed\n");
+    return raffle;
+};
 
-playingWithRafflePrizes();
+//The key part of this example, is a tranfer call
+buyTicket = async (prizeAccount, raffleAccount, subAccount, prizeAmmount) => {
+    await subAccount.functionCall({
+        contractId: prizeAccount.accountId,
+        methodName: "ft_transfer_call",
+        args: {
+            receiver_id: raffleAccount.accountId,
+            amount: String(prizeAmmount),
+            msg: "buy_ticket",
+        },
+        gas: "200000000000000",
+        attachedDeposit: "1",
+    });
+};
+displayStatsFor = async (subAccount, prizeContract) => {
+    const bl = await prizeContract.ft_balance_of({
+        account_id: subAccount.accountId,
+    });
+    console.log("Balance of " + subAccount.accountId);
+    console.log(bl + "\n");
+};
+
+
+raffleContractDemo();
