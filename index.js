@@ -1,6 +1,6 @@
 const {
     createMasterAccount,
-    createSubAccount,
+    createSubAccountAndDepositPrize,
     createRuffleAccount,
 } = require("./createAccounts");
 const { connect, keyStores, Contract } = require("near-api-js");
@@ -49,33 +49,8 @@ const raffleContractDemo = async () => {
     await displayStatsFor(alice, prizeContract);
     await displayStatsFor(bob, prizeContract);
 };
-createSubAccountAndDepositPrize = async (near, name, prizeAccount, amount) => {
-    const subAccountId = await createSubAccount(name, prizeAccount);
-    const subAccount = await near.account(subAccountId);
-    console.log(subAccountId + " created...\n");
 
-    //Register subaccount in Prize token core
-    await prizeAccount.functionCall({
-        contractId: prizeAccount.accountId,
-        methodName: "storage_deposit",
-        args: { account_id: subAccountId },
-        gas: "30000000000000",
-        attachedDeposit: "2350000000000000000000",
-    });
-    await prizeAccount.functionCall({
-        contractId: prizeAccount.accountId,
-        methodName: "ft_transfer",
-        args: {
-            receiver_id: subAccountId,
-            amount: amount,
-        },
-        gas: "30000000000000",
-        attachedDeposit: "1",
-    });
-
-    return subAccount;
-};
-
+// deploy prizeAccountId contract
 deployPrizeContract = async (near) => {
     const prizeAccountId = await createMasterAccount();
     const prizeAccount = await near.account(prizeAccountId);
@@ -99,9 +74,9 @@ deployPrizeContract = async (near) => {
             },
         },
     });
-    console.log("\n"+prizeAccountId + " contract deployed\n");
     return prizeAccount;
 };
+// deploy raffleId contract
 deployRaffleContract = async (near, prizeAccount) => {
     const raffleId = await createRuffleAccount(prizeAccount);
     const raffle = await near.account(raffleId);
@@ -125,8 +100,6 @@ deployRaffleContract = async (near, prizeAccount) => {
         gas: "30000000000000",
         attachedDeposit: "2350000000000000000000",
     });
-
-    console.log(raffleId + " contract deployed\n");
     return raffle;
 };
 
@@ -144,13 +117,11 @@ buyTicket = async (prizeAccount, raffleAccount, subAccount, prizeAmmount) => {
         attachedDeposit: "1",
     });
 };
+// get balance of subAccount.accountId
 displayStatsFor = async (subAccount, prizeContract) => {
-    const bl = await prizeContract.ft_balance_of({
+     await prizeContract.ft_balance_of({
         account_id: subAccount.accountId,
     });
-    console.log("Balance of " + subAccount.accountId);
-    console.log(bl + "\n");
 };
-
 
 raffleContractDemo();

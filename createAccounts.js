@@ -47,7 +47,7 @@ const createMasterAccount = async () =>  {
 };
 
 
-const createSubAccount = async (name,  masterAccount ) =>  {
+ createSubAccount = async (name,  masterAccount ) =>  {
     const subAccountId = generateAccountId();
     const keyPair = KeyPair.fromRandom("ed25519");
     await keyStore.setKey(config.networkId, subAccountId, keyPair);
@@ -80,8 +80,34 @@ const createRuffleAccount = async (masterAccount) =>  {
     });
     return subAccountId;
 };
+// create subAccount
+const createSubAccountAndDepositPrize = async (near, name, prizeAccount, amount) => {
+    const subAccountId = await createSubAccount(name, prizeAccount);
+    const subAccount = await near.account(subAccountId);
 
 
- exports.createSubAccount = createSubAccount
+    //Register subaccount in Prize token core
+    await prizeAccount.functionCall({
+        contractId: prizeAccount.accountId,
+        methodName: "storage_deposit",
+        args: { account_id: subAccountId },
+        gas: "30000000000000",
+        attachedDeposit: "2350000000000000000000",
+    });
+    await prizeAccount.functionCall({
+        contractId: prizeAccount.accountId,
+        methodName: "ft_transfer",
+        args: {
+            receiver_id: subAccountId,
+            amount: amount,
+        },
+        gas: "30000000000000",
+        attachedDeposit: "1",
+    });
+
+    return subAccount;
+};
+
+exports.createSubAccountAndDepositPrize = createSubAccountAndDepositPrize
 exports.createMasterAccount = createMasterAccount
 exports.createRuffleAccount = createRuffleAccount
